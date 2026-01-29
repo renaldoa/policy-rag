@@ -4,6 +4,7 @@ metadata:
   name: qdrant-pvc
   namespace: policy-rag
 spec:
+  storageClassName: longhorn
   accessModes:
     - ReadWriteOnce
   resources:

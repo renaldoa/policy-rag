@@ -1,84 +1,88 @@
-name: Build and Push Container Images
+name: Build, Push & Deploy
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
-  pull_request:
-    branches: [main]
+    branches: [main, master]
+  workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/policy-rag-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/policy-rag-frontend
+  REGISTRY: 10.200.70.45:30500
+  BACKEND_IMAGE: 10.200.70.45:30500/policy-rag/backend
+  FRONTEND_IMAGE: 10.200.70.45:30500/policy-rag/frontend
 
 jobs:
-  build-backend:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+  build-and-deploy:
+    runs-on: [self-hosted, k3s, policy-rag]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set image tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Image tag: ${SHORT_SHA}"
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.BACKEND_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha
+      - name: Build backend image
+        run: |
+          docker build \
+            -t ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
+            -t ${{ env.BACKEND_IMAGE }}:latest \
+            -f backend/Dockerfile.prod \
+            backend/
 
-      - name: Build and push backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile.prod
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Build frontend image
+        run: |
+          docker build \
+            -t ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
+            -t ${{ env.FRONTEND_IMAGE }}:latest \
+            -f frontend/Dockerfile.prod \
+            frontend/
 
-  build-frontend:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
+      - name: Push backend image
+        run: |
+          docker push ${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+          docker push ${{ env.BACKEND_IMAGE }}:latest
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push frontend image
+        run: |
+          docker push ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
+          docker push ${{ env.FRONTEND_IMAGE }}:latest
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.FRONTEND_IMAGE }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -k k8s/base/
 
-      - name: Build and push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile.prod
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # Update image tags to force rollout
+          kubectl set image deployment/backend \
+            backend=${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
+            -n policy-rag
+
+          kubectl set image deployment/frontend \
+            frontend=${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
+            -n policy-rag
+
+      - name: Wait for rollout
+        run: |
+          echo "Waiting for backend rollout..."
+          kubectl rollout status deployment/backend -n policy-rag --timeout=300s
+
+          echo "Waiting for frontend rollout..."
+          kubectl rollout status deployment/frontend -n policy-rag --timeout=300s
+
+      - name: Verify deployment
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n policy-rag
+          echo ""
+          echo "=== Services ==="
+          kubectl get svc -n policy-rag
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n policy-rag
+
+      - name: Cleanup old images
+        if: always()
+        run: |
+          docker image prune -f --filter "until=24h" 2>/dev/null || true

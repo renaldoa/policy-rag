@@ -4,6 +4,7 @@ metadata:
   name: documents-pvc
   namespace: policy-rag
 spec:
+  storageClassName: longhorn
   accessModes:
     - ReadWriteOnce
   resources:
@@ -19,7 +20,7 @@ metadata:
     app: backend
     app.kubernetes.io/part-of: policy-rag
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -51,8 +52,7 @@ spec:
               done
       containers:
         - name: backend
-          image: policy-rag-backend:latest
-          imagePullPolicy: IfNotPresent
+          image: 10.200.70.45:30500/policy-rag/backend:latest
           ports:
             - containerPort: 8000
           envFrom:
@@ -74,7 +74,7 @@ spec:
             httpGet:
               path: /api/health
               port: 8000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
           livenessProbe:
@@ -100,23 +100,3 @@ spec:
   ports:
     - port: 8000
       targetPort: 8000
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: backend-hpa
-  namespace: policy-rag
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: backend
-  minReplicas: 2
-  maxReplicas: 6
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70

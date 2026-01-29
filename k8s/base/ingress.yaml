@@ -4,14 +4,11 @@ metadata:
   name: policy-rag-ingress
   namespace: policy-rag
   annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
-  ingressClassName: nginx
+  ingressClassName: traefik
   rules:
-    - host: rag.example.com
+    - host: rag.10.200.70.251.nip.io
       http:
         paths:
           - path: /api
