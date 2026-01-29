@@ -12,6 +12,8 @@ resources:
   - frontend.yaml
   - ingress.yaml
 
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
-  app.kubernetes.io/part-of: policy-rag
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+      app.kubernetes.io/part-of: policy-rag
+    includeSelectors: false
