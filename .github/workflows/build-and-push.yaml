@@ -50,6 +50,27 @@ jobs:
           docker push ${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }}
           docker push ${{ env.FRONTEND_IMAGE }}:latest
 
+      - name: Install kubectl
+        run: |
+          if ! command -v kubectl &> /dev/null; then
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl
+            mv kubectl /usr/local/bin/
+          fi
+          kubectl version --client
+
+      - name: Configure kubectl
+        run: |
+          # Use in-cluster service account
+          KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          KUBE_CA=$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt | base64 -w0)
+          KUBE_NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          kubectl config set-cluster k3s --server=https://kubernetes.default.svc --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          kubectl config set-credentials runner --token="$KUBE_TOKEN"
+          kubectl config set-context default --cluster=k3s --user=runner --namespace="$KUBE_NS"
+          kubectl config use-context default
+          kubectl get nodes
+
       - name: Deploy to Kubernetes
         run: |
           kubectl apply -k k8s/base/
