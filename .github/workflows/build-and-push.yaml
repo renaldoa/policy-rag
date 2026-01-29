@@ -80,7 +80,7 @@ jobs:
       - name: Wait for rollout
         run: |
           echo "Waiting for backend rollout..."
-          kubectl rollout status deployment/backend -n policy-rag --timeout=300s
+          kubectl rollout status deployment/backend -n policy-rag --timeout=600s
 
           echo "Waiting for frontend rollout..."
           kubectl rollout status deployment/frontend -n policy-rag --timeout=300s
