@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+/* SSE streaming cursor */
+.streaming-cursor::after {
+  content: "▊";
+  animation: blink 1s step-end infinite;
+  @apply text-primary-500;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
