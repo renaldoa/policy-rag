@@ -61,28 +61,21 @@ jobs:
 
       - name: Configure kubectl
         run: |
-          # Use in-cluster service account
           KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-          KUBE_CA=$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt | base64 -w0)
-          KUBE_NS=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
           kubectl config set-cluster k3s --server=https://kubernetes.default.svc --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           kubectl config set-credentials runner --token="$KUBE_TOKEN"
-          kubectl config set-context default --cluster=k3s --user=runner --namespace="$KUBE_NS"
+          kubectl config set-context default --cluster=k3s --user=runner --namespace=policy-rag
           kubectl config use-context default
           kubectl get nodes
 
       - name: Deploy to Kubernetes
         run: |
+          # Apply base manifests
           kubectl apply -k k8s/base/
 
-          # Update image tags to force rollout
-          kubectl set image deployment/backend \
-            backend=${{ env.BACKEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
-            -n policy-rag
-
-          kubectl set image deployment/frontend \
-            frontend=${{ env.FRONTEND_IMAGE }}:${{ steps.tag.outputs.tag }} \
-            -n policy-rag
+          # Restart deployments to pick up new images
+          kubectl rollout restart deployment/backend -n policy-rag
+          kubectl rollout restart deployment/frontend -n policy-rag
 
       - name: Wait for rollout
         run: |
@@ -102,6 +95,9 @@ jobs:
           echo ""
           echo "=== Ingress ==="
           kubectl get ingress -n policy-rag
+          echo ""
+          echo "=== Health Check ==="
+          kubectl exec deploy/backend -n policy-rag -- curl -sf http://localhost:8000/api/health || echo "Health check not reachable from pod"
 
       - name: Cleanup old images
         if: always()
